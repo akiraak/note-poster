@@ -62,15 +62,79 @@ async function createDraft(page, title, bodyText, imagePath, isPublish, tags = [
     // ★長文対策: 入力速度アップ(delay:5) & タイムアウト無効化(timeout:0)
     await editor.pressSequentially(bodyText, { delay: 5, timeout: 0 });
 
+    // 【修正1】入力がアプリ側に反映されるのを確実に待つ
+    console.log('Waiting for body text to sync...');
+    await page.waitForTimeout(3000);
+
+    // フォーカスを外す（保存トリガー）
     await page.getByPlaceholder('記事タイトル').click();
+    await page.waitForTimeout(1000);
   };
 
   const finalize = async () => {
-    await page.waitForTimeout(3000);
+    console.log('--- Finalizing Post ---');
+    // 念のため少し待つ
+    await page.waitForTimeout(2000);
+
     if (isPublish) {
-      await page.getByRole('button', { name: '公開に進む' }).click();
+      const publishButton = page.getByRole('button', { name: /公開(設定|に進む)/ });
       const tagInput = page.getByPlaceholder('ハッシュタグを追加する');
-      await tagInput.waitFor();
+
+      // ★修正ポイント: モーダルが開くまで最大3回クリックを試行する
+      let isModalOpen = false;
+      for (let i = 0; i < 3; i++) {
+        try {
+          // すでに開いているか確認
+          if (await tagInput.isVisible()) {
+            isModalOpen = true;
+            break;
+          }
+
+          console.log(`Attempt ${i + 1}: Clicking publish button...`);
+          await publishButton.waitFor({ state: 'visible', timeout: 5000 });
+          await publishButton.click();
+
+          // 【修正2】警告ポップアップ（入力未完了）が出ていないかチェック
+          // わずかなラグを考慮して少し待ってからチェック
+          try {
+             const warningPopup = page.getByText('タイトル、本文を入力してください');
+             // 短いタイムアウトでチェック
+             if (await warningPopup.isVisible({ timeout: 2000 })) {
+                 console.error('Error: "タイトル、本文を入力してください" 警告が出ました。');
+                 await page.getByRole('button', { name: '閉じる' }).click();
+                 throw new Error('INPUT_SYNC_FAILED'); // 専用エラーを投げる
+             }
+          } catch (checkErr) {
+             // warningPopupが見つからない(timeout)なら正常なので無視、
+             // INPUT_SYNC_FAILEDなら外側のcatchへ
+             if (checkErr.message === 'INPUT_SYNC_FAILED') throw checkErr;
+          }
+
+          // クリック後、入力欄が出るまで最大5秒待つ
+          await tagInput.waitFor({ state: 'visible', timeout: 5000 });
+          
+          console.log('Modal opened!');
+          isModalOpen = true;
+          break; // 成功したらループを抜ける
+
+        } catch (e) {
+          if (e.message === 'INPUT_SYNC_FAILED') {
+             throw new Error('本文の入力がnote側に反映されませんでした。処理を中断します。');
+          }
+          console.log('Modal did not appear, waiting before retry...');
+          await page.waitForTimeout(2000); // 少し待ってから再試行
+        }
+      }
+
+      // 3回やってもダメならエラー扱いとし、スクリーンショットを保存
+      if (!isModalOpen) {
+        console.error('Failed to open publish modal.');
+        console.log('Saving debug screenshot to "error_state.png"...');
+        await page.screenshot({ path: 'error_state.png', fullPage: true });
+        throw new Error('公開設定画面が開きませんでした。error_state.png を確認してください。');
+      }
+
+      // --- ここからタグ入力などの処理 ---
       if (tags.length > 0) {
         for (const tag of tags) {
           await tagInput.fill(tag);
@@ -78,9 +142,15 @@ async function createDraft(page, title, bodyText, imagePath, isPublish, tags = [
           await page.waitForTimeout(500);
         }
       }
-      const postBtn = page.getByRole('button', { name: '投稿する', exact: true });
+
+      // 最後の「投稿」ボタン（"投稿する" などの揺れに対応）
+      const postBtn = page.getByRole('button', { name: '投稿', exact: false });
+      await postBtn.waitFor();
       await postBtn.click();
+      
+      console.log('Post submitted. Waiting for completion...');
       await page.waitForTimeout(5000);
+
     } else {
       await page.getByRole('button', { name: '下書き保存' }).click();
       await page.waitForTimeout(3000);
