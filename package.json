@@ -1,0 +1,24 @@
+{
+  "name": "note-poster",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akiraak/note-poster.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/akiraak/note-poster/issues"
+  },
+  "homepage": "https://github.com/akiraak/note-poster#readme",
+  "dependencies": {
+    "commander": "^14.0.2",
+    "playwright": "^1.57.0"
+  }
+}
