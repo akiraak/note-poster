@@ -186,14 +186,20 @@ async function loginToNote(page, email, password) {
   let browser;
   try {
     console.log('--- Launching Browser (Headless) ---');
-    browser = await chromium.launch({
-      headless: true, 
+
+    // 環境変数 CHROMIUM_PATH に対応させる
+    const launchOptions = {
+      headless: true,
+      // 環境変数があれば指定パス（Docker用）、なければ undefined（ローカル用）
+      executablePath: process.env.CHROMIUM_PATH || undefined,
       args: [
-        '--no-sandbox', 
+        '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage'
-      ] 
-    });
+      ]
+    };
+
+    browser = await chromium.launch(launchOptions);
 
     const context = await browser.newContext({
        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
